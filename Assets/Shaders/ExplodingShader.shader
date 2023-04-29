@@ -72,12 +72,35 @@ Shader "Custom/ExplodeShader"
 				return o;
 			}
 
+			float3 GetTriangleNormal(float3 pos0, float3 pos1, float3 pos2)
+			{
+				float3 a = pos0 - pos1;
+				float3 b = pos2 - pos1;
+				return normalize(cross(a, b));
+			}
+
+			float3 DisplaceVertex(float3 position, float3 normal)
+			{
+				float magnitude = 2.0;
+				float3 direction = normal * ((sin(_Time.y) + 1.0) / 2.0) * magnitude; 
+				return position + direction;
+			}
+
+			GSOutput ExplodeVertex(VSOutput vertex, float3 normal)
+			{
+				float3 position = vertex.position;
+				float3 newPos = DisplaceVertex(position, normal);
+				return VertexTransformWorldToClip(newPos, vertex.uv);
+			}
+
 			[maxvertexcount(3)]
 			void GSMain(triangle VSOutput input[3], inout TriangleStream<GSOutput> triStream)
 			{
-				triStream.Append(VertexTransformWorldToClip(input[0].position, input[0].uv));
-				triStream.Append(VertexTransformWorldToClip(input[1].position, input[1].uv));
-				triStream.Append(VertexTransformWorldToClip(input[2].position, input[2].uv));
+				float3 triNormal = GetTriangleNormal(input[0].position, input[1].position, input[2].position);
+
+				triStream.Append(ExplodeVertex(input[0], triNormal));
+				triStream.Append(ExplodeVertex(input[1], triNormal));
+				triStream.Append(ExplodeVertex(input[2], triNormal));
 			}
 		ENDHLSL
 
