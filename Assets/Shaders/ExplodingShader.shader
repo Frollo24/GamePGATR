@@ -6,6 +6,10 @@ Shader "Custom/ExplodeShader"
 		_MainTex ("Albedo (RGB)", 2D) = "white" {}
 		_Glossiness ("Smoothness", Range(0,1)) = 0.5
 		_Metallic ("Metallic", Range(0,1)) = 0.0
+
+		_StartTime ("Start Time", Float) = 0.0
+
+		[HDR] _EmissionColor("Color", Color) = (0,0,0)
 	}
 	SubShader
 	{
@@ -38,6 +42,10 @@ Shader "Custom/ExplodeShader"
 				sampler2D _MainTex;
 				float _Glossiness;
 				float _Metallic;
+
+				float _StartTime;
+
+				float4 _EmissionColor;
 			CBUFFER_END
 
 			struct VSInput
@@ -63,6 +71,23 @@ Shader "Custom/ExplodeShader"
 				float3 worldPos : TEXCOORD1;
 			};
 
+			// Simple noise function, sourced from http://answers.unity.com/answers/624136/view.html
+			// Extended discussion on this function can be found at the following link:
+			// https://forum.unity.com/threads/am-i-over-complicating-this-random-function.454887/#post-2949326
+			// Returns a number in the 0...1 range.
+			float rand(float3 co)
+			{
+				return frac(sin(dot(co.xyz, float3(12.9898, 78.233, 53.539))) * 43758.5453);
+			}
+
+			float3 rand3(float3 co)
+			{
+				float x = frac(sin(dot(co.xyz, float3(12.9898, 78.233, 53.539) * 1.5)) * 43758.5453);
+				float y = frac(sin(dot(co.xyz, float3(12.9898, 78.233, 53.539) * 2.5)) * 43758.5453);
+				float z = frac(sin(dot(co.xyz, float3(12.9898, 78.233, 53.539) * 4.5)) * 43758.5453);
+				return float3(x, y, z);
+			}
+
 			GSOutput VertexTransformWorldToClip(float3 pos, float2 uv)
 			{
 				GSOutput o;
@@ -72,18 +97,49 @@ Shader "Custom/ExplodeShader"
 				return o;
 			}
 
-			[maxvertexcount(3)]
+			float3 GetTriangleNormal(float3 pos0, float3 pos1, float3 pos2)
+			{
+				float3 a = pos2 - pos1;
+				float3 b = pos0 - pos1;
+				return normalize(cross(a, b));
+			}
+
+			float3 DisplaceVertex(float3 position, float3 normal)
+			{
+				float magnitude = 2.0;
+				float displacement = ((_Time.y - _StartTime) / 2.0) * magnitude;
+				float3 direction = normal * displacement; 
+				direction += normalize(rand3(normal)) * displacement * 0.5;
+				return position + direction;
+			}
+
+			GSOutput ExplodeVertex(VSOutput vertex, float3 normal)
+			{
+				float3 position = vertex.position;
+				float3 newPos = DisplaceVertex(position, normal);
+				return VertexTransformWorldToClip(newPos, vertex.uv);
+			}
+
+			[maxvertexcount(6)]
 			void GSMain(triangle VSOutput input[3], inout TriangleStream<GSOutput> triStream)
 			{
-				triStream.Append(VertexTransformWorldToClip(input[0].position, input[0].uv));
-				triStream.Append(VertexTransformWorldToClip(input[1].position, input[1].uv));
-				triStream.Append(VertexTransformWorldToClip(input[2].position, input[2].uv));
+				float3 triNormal = GetTriangleNormal(input[0].position, input[1].position, input[2].position);
+
+				triStream.Append(ExplodeVertex(input[0], -triNormal));
+				triStream.Append(ExplodeVertex(input[1], -triNormal));
+				triStream.Append(ExplodeVertex(input[2], -triNormal));
+
+				triStream.RestartStrip();
+
+				triStream.Append(ExplodeVertex(input[0], triNormal));
+				triStream.Append(ExplodeVertex(input[1], triNormal));
+				triStream.Append(ExplodeVertex(input[2], triNormal));
 			}
 		ENDHLSL
 
 		Pass
 		{
-			Name "GrassPass"
+			Name "GeometryPass"
 			Tags { "LightMode" = "UniversalForward" }
 
 			ZWrite On
@@ -126,7 +182,7 @@ Shader "Custom/ExplodeShader"
 				bladeTint *= float4(max(light.color.xyz, 0.01), 1);
 #endif
 
-				return _Color * bladeTint;
+				return _Color * bladeTint + _EmissionColor;
 			}
 			ENDHLSL
 		}
