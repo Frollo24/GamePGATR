@@ -63,6 +63,23 @@ Shader "Custom/ExplodeShader"
 				float3 worldPos : TEXCOORD1;
 			};
 
+			// Simple noise function, sourced from http://answers.unity.com/answers/624136/view.html
+			// Extended discussion on this function can be found at the following link:
+			// https://forum.unity.com/threads/am-i-over-complicating-this-random-function.454887/#post-2949326
+			// Returns a number in the 0...1 range.
+			float rand(float3 co)
+			{
+				return frac(sin(dot(co.xyz, float3(12.9898, 78.233, 53.539))) * 43758.5453);
+			}
+
+			float3 rand3(float3 co)
+			{
+				float x = frac(sin(dot(co.xyz, float3(12.9898, 78.233, 53.539) * 1.5)) * 43758.5453);
+				float y = frac(sin(dot(co.xyz, float3(12.9898, 78.233, 53.539) * 2.5)) * 43758.5453);
+				float z = frac(sin(dot(co.xyz, float3(12.9898, 78.233, 53.539) * 4.5)) * 43758.5453);
+				return float3(x, y, z);
+			}
+
 			GSOutput VertexTransformWorldToClip(float3 pos, float2 uv)
 			{
 				GSOutput o;
@@ -82,7 +99,9 @@ Shader "Custom/ExplodeShader"
 			float3 DisplaceVertex(float3 position, float3 normal)
 			{
 				float magnitude = 2.0;
-				float3 direction = normal * ((sin(_Time.y) + 1.0) / 2.0) * magnitude; 
+				float displacement = ((sin(_Time.y) + 1.0) / 2.0) * magnitude;
+				float3 direction = normal * displacement; 
+				direction += normalize(rand3(normal)) * displacement * 0.5;
 				return position + direction;
 			}
 
@@ -93,10 +112,16 @@ Shader "Custom/ExplodeShader"
 				return VertexTransformWorldToClip(newPos, vertex.uv);
 			}
 
-			[maxvertexcount(3)]
+			[maxvertexcount(6)]
 			void GSMain(triangle VSOutput input[3], inout TriangleStream<GSOutput> triStream)
 			{
 				float3 triNormal = GetTriangleNormal(input[0].position, input[1].position, input[2].position);
+
+				triStream.Append(ExplodeVertex(input[0], -triNormal));
+				triStream.Append(ExplodeVertex(input[1], -triNormal));
+				triStream.Append(ExplodeVertex(input[2], -triNormal));
+
+				triStream.RestartStrip();
 
 				triStream.Append(ExplodeVertex(input[0], triNormal));
 				triStream.Append(ExplodeVertex(input[1], triNormal));
@@ -149,7 +174,7 @@ Shader "Custom/ExplodeShader"
 				bladeTint *= float4(max(light.color.xyz, 0.01), 1);
 #endif
 
-				return _Color * bladeTint;
+				return _Color * bladeTint * 4.0;
 			}
 			ENDHLSL
 		}
