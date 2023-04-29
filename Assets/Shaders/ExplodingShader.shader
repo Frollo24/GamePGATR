@@ -7,6 +7,8 @@ Shader "Custom/ExplodeShader"
 		_Glossiness ("Smoothness", Range(0,1)) = 0.5
 		_Metallic ("Metallic", Range(0,1)) = 0.0
 
+		_StartTime ("Start Time", Float) = 0.0
+
 		[HDR] _EmissionColor("Color", Color) = (0,0,0)
 	}
 	SubShader
@@ -40,6 +42,8 @@ Shader "Custom/ExplodeShader"
 				sampler2D _MainTex;
 				float _Glossiness;
 				float _Metallic;
+
+				float _StartTime;
 
 				float4 _EmissionColor;
 			CBUFFER_END
@@ -103,7 +107,7 @@ Shader "Custom/ExplodeShader"
 			float3 DisplaceVertex(float3 position, float3 normal)
 			{
 				float magnitude = 2.0;
-				float displacement = ((sin(_Time.y) + 1.0) / 2.0) * magnitude;
+				float displacement = ((_Time.y - _StartTime) / 2.0) * magnitude;
 				float3 direction = normal * displacement; 
 				direction += normalize(rand3(normal)) * displacement * 0.5;
 				return position + direction;
@@ -135,7 +139,7 @@ Shader "Custom/ExplodeShader"
 
 		Pass
 		{
-			Name "GrassPass"
+			Name "GeometryPass"
 			Tags { "LightMode" = "UniversalForward" }
 
 			ZWrite On

@@ -8,12 +8,12 @@ ModelImporter:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
       name: PELE
-    second: {fileID: 2100000, guid: aa2d546eab33b054b8d40e56bbca3f4f, type: 2}
+    second: {fileID: 2100000, guid: e9b22f9e05c297a4bba14ba334183f9c, type: 2}
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
       name: ROUPA
-    second: {fileID: 2100000, guid: aa2d546eab33b054b8d40e56bbca3f4f, type: 2}
+    second: {fileID: 2100000, guid: e9b22f9e05c297a4bba14ba334183f9c, type: 2}
   materials:
     materialImportMode: 2
     materialName: 0
