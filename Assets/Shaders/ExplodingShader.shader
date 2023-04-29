@@ -6,6 +6,8 @@ Shader "Custom/ExplodeShader"
 		_MainTex ("Albedo (RGB)", 2D) = "white" {}
 		_Glossiness ("Smoothness", Range(0,1)) = 0.5
 		_Metallic ("Metallic", Range(0,1)) = 0.0
+
+		[HDR] _EmissionColor("Color", Color) = (0,0,0)
 	}
 	SubShader
 	{
@@ -38,6 +40,8 @@ Shader "Custom/ExplodeShader"
 				sampler2D _MainTex;
 				float _Glossiness;
 				float _Metallic;
+
+				float4 _EmissionColor;
 			CBUFFER_END
 
 			struct VSInput
@@ -174,7 +178,7 @@ Shader "Custom/ExplodeShader"
 				bladeTint *= float4(max(light.color.xyz, 0.01), 1);
 #endif
 
-				return _Color * bladeTint * 4.0;
+				return _Color * bladeTint + _EmissionColor;
 			}
 			ENDHLSL
 		}
