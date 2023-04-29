@@ -74,8 +74,8 @@ Shader "Custom/ExplodeShader"
 
 			float3 GetTriangleNormal(float3 pos0, float3 pos1, float3 pos2)
 			{
-				float3 a = pos0 - pos1;
-				float3 b = pos2 - pos1;
+				float3 a = pos2 - pos1;
+				float3 b = pos0 - pos1;
 				return normalize(cross(a, b));
 			}
 
