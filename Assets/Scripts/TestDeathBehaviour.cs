@@ -4,7 +4,7 @@ using UnityEngine;
 
 public class TestDeathBehaviour : MonoBehaviour
 {
-    public MeshRenderer meshRenderer;
+    public Renderer meshRenderer;
     public Material explodeMaterial;
 
     private void Update()
@@ -18,6 +18,7 @@ public class TestDeathBehaviour : MonoBehaviour
                 materials[i].SetFloat("_StartTime", Time.time);
             }
             meshRenderer.materials = materials;
+            gameObject.GetComponent<Animator>().enabled = false;
         }
     }
 }
