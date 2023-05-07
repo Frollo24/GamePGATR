@@ -10,8 +10,13 @@ public class ShooterBehaviour : MonoBehaviour
     {
         if (Input.GetButtonDown("Fire1") && Physics.Raycast(transform.position, transform.forward, out RaycastHit hit, 50f, enemiesLayer))
         {
-            // TODO: call enemy death effects
-            Destroy(hit.transform.gameObject);
+
+            MovingAgent target = hit.transform.gameObject.GetComponent<MovingAgent>();
+
+            if (target != null && !target.explode) 
+            {
+                target.Explode();
+            }
         }
     }
 }

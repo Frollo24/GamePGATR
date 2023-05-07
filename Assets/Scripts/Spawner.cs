@@ -9,7 +9,7 @@ public class Spawner : MonoBehaviour
     [SerializeField] private GameObject prefab;
     // Start is called before the first frame update
     private float nextActionTime = 0.0f;
-    public float period = 5.0f;
+    public float period = 3.0f;
 
     // Update is called once per frame
     void Update()
