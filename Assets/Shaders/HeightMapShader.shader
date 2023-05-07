@@ -10,8 +10,11 @@ Shader "Custom/HeightMapShader"
 		[NoScaleOffset] _NormalMap("Normal map", 2D) = "white" {}
 		_NormalStrength("Normal strength", Float) = 1
 
-		_HeightFactor("Scale", Float) = 0.005
+		_HeightFactor("Scale", Float) = 5
 		_HeightMap("Height Map", 2D) = "black" {}
+
+		_FalloffFactor("Falloff Strength", Range(0,1)) = 0.05
+		_FalloffMap("Falloff Map", 2D) = "black" {}
 
 		[HDR] _EmissionColor("Color", Color) = (0,0,0)
 		_TessellationUniform("Tesselation Uniform", Range(1, 64)) = 1
@@ -44,6 +47,7 @@ Shader "Custom/HeightMapShader"
 			TEXTURE2D(_MainTexture); SAMPLER(sampler_MainTexture);
 			TEXTURE2D(_NormalMap); SAMPLER(sampler_NormalMap);
 			TEXTURE2D(_HeightMap); SAMPLER(sampler_HeightMap);
+			TEXTURE2D(_FalloffMap); SAMPLER(sampler_FalloffMap);
 
 			CBUFFER_START(UnityPerMaterial)
 				float4 _Color;
@@ -54,6 +58,7 @@ Shader "Custom/HeightMapShader"
 				float _NormalStrength;
 
 				float _HeightFactor;
+				float _FalloffFactor;
 
 				float4 _EmissionColor;
 				float _TessellationUniform;
@@ -179,7 +184,8 @@ Shader "Custom/HeightMapShader"
 				float2 uv = BARYCENTRIC_INTERPOLATE(uv);
 				// Sample the height map and offset position along the normal vector accordingly
 				float height = SAMPLE_TEXTURE2D_LOD(_HeightMap, sampler_HeightMap, uv, 0).r * _HeightFactor;
-				positionWS += normalWS * height;
+				float falloff = SAMPLE_TEXTURE2D_LOD(_FalloffMap, sampler_FalloffMap, uv, 0).r * _FalloffFactor;
+				positionWS += normalWS * height * pow(1.0 - falloff, 32);
 
 				output.uv = uv;
 				output.positionCS = TransformWorldToHClip(positionWS);
