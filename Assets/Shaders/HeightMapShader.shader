@@ -95,8 +95,9 @@ Shader "Custom/HeightMapShader"
 
 			struct HSOutput
 			{
-				float edge[3] : SV_TessFactor;
-				float inside  : SV_InsideTessFactor;
+				float edge[3]          : SV_TessFactor;
+				float inside           : SV_InsideTessFactor;
+				float3 bezierPoints[7] : BEZIERPOS;
 			};
 
 			struct DSOutput
@@ -111,6 +112,29 @@ Shader "Custom/HeightMapShader"
 				UNITY_VERTEX_INPUT_INSTANCE_ID
 			};
 
+			//Bezier control point calculations. See https://alex.vlachos.com/graphics/CurvedPNTriangles.pdf for explanation
+			float3 CalculateBezierControlPoint(float3 p0PositionWS, float3 aNormalWS, float3 p1PositionWS, float3 bNormalWS) {
+				float w = dot(p1PositionWS - p0PositionWS, aNormalWS);
+				return (p0PositionWS * 2 + p1PositionWS - w * aNormalWS) / 3.0;
+			}
+
+			void CalculateBezierControlPoints(inout float3 bezierPoints[7],
+				float3 p0PositionWS, float3 p0NormalWS, float3 p1PositionWS, float3 p1NormalWS, float3 p2PositionWS, float3 p2NormalWS) {
+				bezierPoints[0] = CalculateBezierControlPoint(p0PositionWS, p0NormalWS, p1PositionWS, p1NormalWS);
+				bezierPoints[1] = CalculateBezierControlPoint(p1PositionWS, p1NormalWS, p0PositionWS, p0NormalWS);
+				bezierPoints[2] = CalculateBezierControlPoint(p1PositionWS, p1NormalWS, p2PositionWS, p2NormalWS);
+				bezierPoints[3] = CalculateBezierControlPoint(p2PositionWS, p2NormalWS, p1PositionWS, p1NormalWS);
+				bezierPoints[4] = CalculateBezierControlPoint(p2PositionWS, p2NormalWS, p0PositionWS, p0NormalWS);
+				bezierPoints[5] = CalculateBezierControlPoint(p0PositionWS, p0NormalWS, p2PositionWS, p2NormalWS);
+				float3 avgBezier = 0;
+				[unroll] for (int i = 0; i < 6; i++) {
+					avgBezier += bezierPoints[i];
+				}
+				avgBezier /= 6.0;
+				float3 avgControl = (p0PositionWS + p1PositionWS + p2PositionWS) / 3.0;
+				bezierPoints[6] = avgBezier + (avgBezier - avgControl) / 2.0;
+			}
+
 			HSOutput PatchMain(InputPatch<VSOutput, 3> patch)
 			{
 				UNITY_SETUP_INSTANCE_ID(patch[0]); // Set up instancing
@@ -119,6 +143,9 @@ Shader "Custom/HeightMapShader"
 				output.edge[1] = _TessellationUniform;
 				output.edge[2] = _TessellationUniform;
 				output.inside = _TessellationUniform;
+
+				CalculateBezierControlPoints(output.bezierPoints, patch[0].positionWS, patch[0].normalWS, patch[1].positionWS, patch[1].normalWS, patch[2].positionWS, patch[2].normalWS);
+
 				return output;
 			}
 
@@ -263,101 +290,6 @@ Shader "Custom/HeightMapShader"
 				surface.occlusion = 1;
 
 				return UniversalFragmentPBR(lightingInput, surface);
-			}
-			ENDHLSL
-		}
-
-		Pass
-		{
-			Name "ShadowCaster"
-			Tags { "LightMode" = "ShadowCaster" }
-
-			ZWrite On
-			ZTest LEqual
-
-			HLSLPROGRAM
-			#pragma target 5.0 // 5.0 required for tessellation
-
-			#pragma multi_compile _ _MAIN_LIGHT_SHADOWS
-			#pragma multi_compile _ _MAIN_LIGHT_SHADOWS_CASCADE
-			#pragma multi_compile _ _ADDITIONAL_LIGHTS_VERTEX _ADDITIONAL_LIGHTS
-			#pragma multi_compile_fragment _ _ADDITIONAL_LIGHT_SHADOWS
-			#pragma multi_compile_fragment _ _SHADOWS_SOFT
-			#pragma multi_compile_fragment _ _SCREEN_SPACE_OCCLUSION
-			#pragma multi_compile _ LIGHTMAP_SHADOW_MIXING
-			#pragma multi_compile _ SHADOWS_SHADOWMASK
-			#pragma multi_compile _ DIRLIGHTMAP_COMBINED
-			#pragma multi_compile _ LIGHTMAP_ON
-			#pragma multi_compile_fog
-			#pragma multi_compile_instancing
-
-			// Material keywords
-			#pragma shader_feature_local _PARTITIONING_INTEGER _PARTITIONING_FRAC_EVEN _PARTITIONING_FRAC_ODD _PARTITIONING_POW2
-			#pragma shader_feature_local _TESSELLATION_SMOOTHING_FLAT _TESSELLATION_SMOOTHING_PHONG _TESSELLATION_SMOOTHING_BEZIER_LINEAR_NORMALS _TESSELLATION_SMOOTHING_BEZIER_QUAD_NORMALS
-			#pragma shader_feature_local _TESSELLATION_FACTOR_CONSTANT _TESSELLATION_FACTOR_WORLD _TESSELLATION_FACTOR_SCREEN _TESSELLATION_FACTOR_WORLD_WITH_DEPTH
-			#pragma shader_feature_local _TESSELLATION_SMOOTHING_VCOLORS
-			#pragma shader_feature_local _TESSELLATION_FACTOR_VCOLORS
-			#pragma shader_feature_local _GENERATE_NORMALS_MAP _GENERATE_NORMALS_HEIGHT
-
-			#pragma require tessellation tessHW
-
-			#pragma vertex VSMain
-			#pragma hull HSMain
-			#pragma domain DSMain
-			#pragma fragment PSMain
-
-			#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
-			#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
-			#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/CommonMaterial.hlsl"
-			#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/SurfaceInput.hlsl"
-
-			float3 _LightDirection;
-			float3 _LightPosition;
-
-			float4 GetShadowPositionHClip(VSInput input)
-			{
-				float3 positionWS = TransformObjectToWorld(input.positionOS.xyz);
-				float3 normalWS = TransformObjectToWorldNormal(input.normalOS);
-
-#if _CASTING_PUNCTUAL_LIGHT_SHADOW
-				float3 lightDirectionWS = normalize(_LightPosition - positionWS);
-#else
-				float3 lightDirectionWS = _LightDirection;
-#endif
-
-				float4 positionCS = TransformWorldToHClip(ApplyShadowBias(positionWS, normalWS, lightDirectionWS));
-
-#if UNITY_REVERSED_Z
-				positionCS.z = min(positionCS.z, UNITY_NEAR_CLIP_VALUE);
-#else
-				positionCS.z = max(positionCS.z, UNITY_NEAR_CLIP_VALUE);
-#endif
-
-				return positionCS;
-			}
-
-			// Custom vertex shader to apply shadow bias.
-			VSOutput VSMain(VSInput input)
-			{
-				VSOutput output;
-				UNITY_SETUP_INSTANCE_ID(input);
-				UNITY_TRANSFER_INSTANCE_ID(input, output);
-
-				VertexPositionInputs posnInputs = GetVertexPositionInputs(input.positionOS);
-				VertexNormalInputs normalInputs = GetVertexNormalInputs(input.normalOS, input.tangentOS);
-
-				output.positionWS = GetShadowPositionHClip(input);
-				output.positionCS = posnInputs.positionCS;
-				output.normalWS = normalInputs.normalWS;
-				output.tangentWS = float4(normalInputs.tangentWS, input.tangentOS.w);
-				output.uv = TRANSFORM_TEX(input.uv, _MainTexture);
-				return output;
-			}
-
-			float4 PSMain(VSOutput i) : SV_Target
-			{
-				Alpha(SampleAlbedoAlpha(i.uv, TEXTURE2D_ARGS(_BaseMap, sampler_BaseMap)).a, _Color, _Cutoff);
-				return 0;
 			}
 			ENDHLSL
 		}
