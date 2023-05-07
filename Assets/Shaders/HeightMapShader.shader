@@ -118,13 +118,17 @@ Shader "Custom/HeightMapShader"
 			};
 
 			//Bezier control point calculations. See https://alex.vlachos.com/graphics/CurvedPNTriangles.pdf for explanation
-			float3 CalculateBezierControlPoint(float3 p0PositionWS, float3 aNormalWS, float3 p1PositionWS, float3 bNormalWS) {
+			float3 CalculateBezierControlPoint(float3 p0PositionWS, float3 aNormalWS, float3 p1PositionWS, float3 bNormalWS)
+			{
 				float w = dot(p1PositionWS - p0PositionWS, aNormalWS);
 				return (p0PositionWS * 2 + p1PositionWS - w * aNormalWS) / 3.0;
 			}
 
 			void CalculateBezierControlPoints(inout float3 bezierPoints[7],
-				float3 p0PositionWS, float3 p0NormalWS, float3 p1PositionWS, float3 p1NormalWS, float3 p2PositionWS, float3 p2NormalWS) {
+				float3 p0PositionWS, float3 p0NormalWS,
+				float3 p1PositionWS, float3 p1NormalWS,
+				float3 p2PositionWS, float3 p2NormalWS)
+			{
 				bezierPoints[0] = CalculateBezierControlPoint(p0PositionWS, p0NormalWS, p1PositionWS, p1NormalWS);
 				bezierPoints[1] = CalculateBezierControlPoint(p1PositionWS, p1NormalWS, p0PositionWS, p0NormalWS);
 				bezierPoints[2] = CalculateBezierControlPoint(p1PositionWS, p1NormalWS, p2PositionWS, p2NormalWS);
@@ -138,6 +142,24 @@ Shader "Custom/HeightMapShader"
 				avgBezier /= 6.0;
 				float3 avgControl = (p0PositionWS + p1PositionWS + p2PositionWS) / 3.0;
 				bezierPoints[6] = avgBezier + (avgBezier - avgControl) / 2.0;
+			}
+
+			float3 CalculateBezierPosition(float3 bary, float3 bezierPoints[7],
+				float3 p0PositionWS, float3 p1PositionWS, float3 p2PositionWS)
+			{
+				float3 smoothedPositionWS =
+					p0PositionWS * (bary.x * bary.x * bary.x) +
+					p1PositionWS * (bary.y * bary.y * bary.y) +
+					p2PositionWS * (bary.z * bary.z * bary.z) +
+					bezierPoints[0] * (3 * bary.x * bary.x * bary.y) +
+					bezierPoints[1] * (3 * bary.y * bary.y * bary.x) +
+					bezierPoints[2] * (3 * bary.y * bary.y * bary.z) +
+					bezierPoints[3] * (3 * bary.z * bary.z * bary.y) +
+					bezierPoints[4] * (3 * bary.z * bary.z * bary.x) +
+					bezierPoints[5] * (3 * bary.x * bary.x * bary.z) +
+					bezierPoints[6] * (6 * bary.x * bary.y * bary.z);
+
+				return smoothedPositionWS;
 			}
 
 			HSOutput PatchMain(InputPatch<VSOutput, 3> patch)
@@ -177,7 +199,7 @@ Shader "Custom/HeightMapShader"
 					patch[1].fieldname * barycentricCoords.y + \
 					patch[2].fieldname * barycentricCoords.z;
 
-				float3 positionWS = BARYCENTRIC_INTERPOLATE(positionWS);
+				float3 positionWS = CalculateBezierPosition(barycentricCoords, input.bezierPoints, patch[0].positionWS, patch[1].positionWS, patch[2].positionWS);
 				float3 normalWS = BARYCENTRIC_INTERPOLATE(normalWS);
 				float3 tangentWS = BARYCENTRIC_INTERPOLATE(tangentWS.xyz);
 
