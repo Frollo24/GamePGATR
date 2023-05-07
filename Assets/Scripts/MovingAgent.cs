@@ -32,7 +32,7 @@ public class MovingAgent : MonoBehaviour
         var materials = meshRenderer.materials;
         for (int i = 0; i < materials.Length; i++)
         {
-            materials[i] = explodeMaterial;
+            materials[i] = new Material(explodeMaterial);
             materials[i].SetFloat("_StartTime", Time.time);
         }
         meshRenderer.materials = materials;
