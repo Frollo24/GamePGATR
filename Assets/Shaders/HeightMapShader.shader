@@ -185,7 +185,7 @@ Shader "Custom/HeightMapShader"
 				// Sample the height map and offset position along the normal vector accordingly
 				float height = SAMPLE_TEXTURE2D_LOD(_HeightMap, sampler_HeightMap, uv, 0).r * _HeightFactor;
 				float falloff = SAMPLE_TEXTURE2D_LOD(_FalloffMap, sampler_FalloffMap, uv, 0).r * _FalloffFactor;
-				positionWS += normalWS * height * pow(1.0 - falloff, 32);
+				positionWS += normalWS * height * pow(1.0 - falloff, 64);
 
 				output.uv = uv;
 				output.positionCS = TransformWorldToHClip(positionWS);
