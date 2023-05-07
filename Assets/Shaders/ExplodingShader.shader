@@ -4,12 +4,18 @@ Shader "Custom/ExplodeShader"
 	{
 		_Color ("Color", Color) = (1,1,1,1)
 		_MainTex ("Albedo (RGB)", 2D) = "white" {}
-		_Glossiness ("Smoothness", Range(0,1)) = 0.5
+		_Glossiness ("Smoothness", Range(0,100)) = 50
 		_Metallic ("Metallic", Range(0,1)) = 0.0
 
 		_StartTime ("Start Time", Float) = 0.0
 
 		[HDR] _EmissionColor("Color", Color) = (0,0,0)
+		[HDR] _AmbientColor("Ambient Color", Color) = (0.4, 0.4, 0.4, 1)
+		[HDR] _SpecularColor("Specular Color", Color) = (0.9, 0.9, 0.9, 1)
+		[HDR] _RimColor("Rim Color", Color) = (1,1,1,1)
+
+		_RimAmount("Rim Amount", Range(0, 1)) = 0.7
+		_RimThreshold("Rim Threshold", Range(0, 1)) = 0.1
 	}
 	SubShader
 	{
@@ -18,6 +24,7 @@ Shader "Custom/ExplodeShader"
 			"RenderType" = "Opaque"
 			"Queue" = "Geometry"
 			"RenderPipeline" = "UniversalPipeline"
+			"PassFlags" = "OnlyDirectional"
 		}
 		LOD 200
 		Cull Off
@@ -44,8 +51,14 @@ Shader "Custom/ExplodeShader"
 				float _Metallic;
 
 				float _StartTime;
-
+				float4 _MainTex_ST;
 				float4 _EmissionColor;
+				float4 _AmbientColor;
+				float4 _SpecularColor;
+				float4 _RimColor;
+
+				float _RimAmount;
+				float _RimThreshold;
 			CBUFFER_END
 
 			struct VSInput
@@ -62,6 +75,7 @@ Shader "Custom/ExplodeShader"
 				float3 normal   : NORMAL;
 				float4 tangent  : TANGENT;
 				float2 uv       : TEXCOORD0;
+				float3 viewDir	: TEXCOORD1;
 			};
 
 			struct GSOutput
@@ -69,6 +83,8 @@ Shader "Custom/ExplodeShader"
 				float4 position : SV_POSITION;
 				float2 uv       : TEXCOORD0;
 				float3 worldPos : TEXCOORD1;
+				float3 viewDir	: TEXCOORD2;
+				float3 wNormal   : NORMAL;
 			};
 
 			// Simple noise function, sourced from http://answers.unity.com/answers/624136/view.html
@@ -88,12 +104,14 @@ Shader "Custom/ExplodeShader"
 				return float3(x, y, z);
 			}
 
-			GSOutput VertexTransformWorldToClip(float3 pos, float2 uv)
+			GSOutput VertexTransformWorldToClip(float3 pos, float2 uv, float3 viewDir, float3 wNormal)
 			{
 				GSOutput o;
 				o.position = TransformObjectToHClip(pos);
 				o.uv = uv;
 				o.worldPos = pos;
+				o.viewDir = viewDir;
+				o.wNormal = TransformObjectToWorldNormal(wNormal);
 				return o;
 			}
 
@@ -117,7 +135,7 @@ Shader "Custom/ExplodeShader"
 			{
 				float3 position = vertex.position;
 				float3 newPos = DisplaceVertex(position, normal);
-				return VertexTransformWorldToClip(newPos, vertex.uv);
+				return VertexTransformWorldToClip(newPos, vertex.uv, vertex.viewDir, vertex.normal);
 			}
 
 			[maxvertexcount(6)]
@@ -156,17 +174,26 @@ Shader "Custom/ExplodeShader"
 			{
 				VSOutput output;
 				//output.position = TransformObjectToHClip(input.position.xyz);
-				output.position = float4(TransformObjectToWorld(input.position.xyz), 1.0f);
+				output.position = float4(TransformObjectToWorld(input.position.xyz), 1.0f); //hay que pasarlo a clip en el de geometria.
 				//output.position = input.position;
-				output.normal = input.normal;
+				output.normal = input.normal; //pasarlo a world en el geometry
 				output.tangent = input.tangent;
-				output.uv = input.uv;
+				output.uv = TRANSFORM_TEX(input.uv, _MainTex);
+
+				output.viewDir = GetWorldSpaceViewDir(input.position.xyz);
+
+
 				return output;
 			}
 
 			float4 PSMain(in GSOutput input) : SV_Target
 			{
-				float4 bladeTint = tex2D(_MainTex, input.uv);
+				float4 text = tex2D(_MainTex, input.uv);
+				float4 light = (1.0, 1.0, 1.0, 1.0);
+				float4 specular = (0.0, 0.0, 0.0, 0.0);
+				float4 rim = (0.0, 0.0, 0.0, 0.0);
+				float4 shadowColor = (0.0, 0.0, 0.0, 0.0);
+				Light mainlight = GetMainLight();
 
 #ifdef MAIN_LIGHT_CALCULATE_SHADOWS
 				// Shadow receiving
@@ -175,14 +202,35 @@ Shader "Custom/ExplodeShader"
 
 				float4 shadowCoord = GetShadowCoord(vertexInput);
 				half shadowAttenuation = saturate(MainLightRealtimeShadow(shadowCoord) + 0.25f);
-				float4 shadowColor = lerp(0.0f, 1.0f, shadowAttenuation);
-				bladeTint *= shadowColor;
+				shadowColor = lerp(0.0f, 1.0f, shadowAttenuation);
 
-				Light light = GetMainLight();
-				bladeTint *= float4(max(light.color.xyz, 0.01), 1);
+
 #endif
 
-				return _Color * bladeTint + _EmissionColor;
+				float3 N = normalize(input.wNormal);
+				float3 L = mainlight.direction;
+				float3 viewDir = normalize(input.viewDir);
+				float4 mainlightColor = float4(mainlight.color, 1);
+
+				float NdotL = max(0, dot(N, L));
+				float intensity = smoothstep(0, 0.1, NdotL * shadowColor.x);
+				light = intensity * mainlightColor;
+
+
+				float3 H = normalize(L + viewDir);
+				float NdotH = max(0, dot(N, H));
+				float specFactor = pow(NdotH * intensity, _Glossiness * _Glossiness);
+				float smoothSpecFactor = smoothstep(0.005, 0.01, specFactor);
+				specular = smoothSpecFactor * _SpecularColor;
+
+				float4 rimDot = 1 - dot(viewDir, N);
+				float rimFactor = rimDot * pow(NdotL, _RimThreshold);
+				float smoothRimFactor = smoothstep(_RimAmount - 0.01, _RimAmount + 0.01, rimFactor);
+				rim = rimFactor * _RimColor;
+
+
+
+				return _Color * text * (light + _AmbientColor + specular + rim) + _EmissionColor;
 			}
 			ENDHLSL
 		}
